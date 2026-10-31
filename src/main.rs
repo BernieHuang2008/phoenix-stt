@@ -185,6 +185,9 @@ fn run_daemon(cfg: Config) -> Result<()> {
     if let Err(error) = cfg.check_clipboard() {
         eprintln!("phoenix-stt: 警告: {error:#}");
     }
+    if let Err(error) = cfg.check_paste() {
+        eprintln!("phoenix-stt: 警告: {error:#}");
+    }
     if let Err(error) = cfg.check_curl() {
         eprintln!("phoenix-stt: 警告: {error:#}");
     }
@@ -273,7 +276,7 @@ fn run_gtk(cfg: Config, tx: Sender<AppEvent>, rx: Receiver<AppEvent>) -> Result<
             return;
         };
 
-        let ui = ui::Ui::build(app);
+        let ui = ui::Ui::build(app, &cfg.ui);
         let state = Rc::new(RefCell::new(DaemonState {
             cfg: (*cfg).clone(),
             ui,

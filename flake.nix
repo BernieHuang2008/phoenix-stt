@@ -14,6 +14,7 @@
           runtimeDeps = with pkgs; [
             whisper-cpp
             wl-clipboard
+            wtype
             pipewire
             curl
           ];
@@ -75,6 +76,7 @@
             gtk4-layer-shell
             whisper-cpp
             wl-clipboard
+            wtype
             pipewire
             curl
           ];

@@ -64,12 +64,27 @@ curl_bin = "curl"
 
 [ui]
 enabled = true
+# 胶囊整体缩放。高分屏可以调成 1.5 或 2.0。
+scale = 1.0
+margin_bottom = 64
 
 [ipc]
 # socket = "/run/user/1000/phoenix-stt.sock"
 
 [clipboard]
 bin = "wl-copy"
+
+[paste]
+# 复制成功后，用 Wayland 虚拟键盘发送粘贴快捷键。
+enabled = true
+bin = "wtype"
+shortcut = "ctrl+v"
+terminal_shortcut = "ctrl+shift+v"
+delay_ms = 30
+niri_bin = "niri"
+# 按 app_id 覆盖快捷键，例如：
+# [paste.apps]
+# "SomeApp" = "ctrl+shift+v"
 "#,
         secrets = secrets_path.display(),
         model = model_quoted,

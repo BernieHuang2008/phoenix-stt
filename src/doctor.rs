@@ -75,6 +75,7 @@ pub fn run(paths: &Paths) -> Result<bool> {
         check_whisper(&mut report, cfg);
         check_audio(&mut report, cfg);
         check_clipboard(&mut report, cfg);
+        check_paste(&mut report, cfg);
         check_curl(&mut report, cfg);
         check_ui(&mut report, cfg);
         check_endpoint(&mut report, cfg);
@@ -196,6 +197,42 @@ fn check_clipboard(report: &mut Report, cfg: &Config) {
                 cfg.paths.config.display()
             ),
         ),
+    }
+}
+
+fn check_paste(report: &mut Report, cfg: &Config) {
+    if !cfg.paste.enabled {
+        report.ok("自动粘贴", "已禁用（[paste].enabled = false）");
+        return;
+    }
+    match tools::find_in_path(&cfg.paste.bin) {
+        Some(path) => report.ok(
+            "自动粘贴",
+            &format!(
+                "{}（默认 {}；终端 {}）",
+                path.display(),
+                cfg.paste.shortcut,
+                cfg.paste.terminal_shortcut
+            ),
+        ),
+        None => report.fail(
+            "自动粘贴",
+            &format!(
+                "找不到 `{}`。安装 wtype，或在 {} 中设置 [paste].bin；也可以设置 [paste].enabled = false。",
+                cfg.paste.bin,
+                cfg.paths.config.display()
+            ),
+        ),
+    }
+
+    if tools::find_in_path(&cfg.paste.niri_bin).is_none() {
+        report.warn(
+            "niri 焦点窗口",
+            &format!(
+                "找不到 `{}`，无法按 app_id 选择终端快捷键，将统一使用 {}。",
+                cfg.paste.niri_bin, cfg.paste.shortcut
+            ),
+        );
     }
 }
 

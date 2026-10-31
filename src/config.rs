@@ -180,11 +180,19 @@ impl Default for LlmConfig {
 #[serde(default)]
 pub struct UiConfig {
     pub enabled: bool,
+    /// 胶囊整体缩放倍数。高分屏可以设成 1.5、2.0。
+    pub scale: f64,
+    /// 胶囊距离屏幕底部的逻辑像素。
+    pub margin_bottom: i32,
 }
 
 impl Default for UiConfig {
     fn default() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            scale: 1.0,
+            margin_bottom: 64,
+        }
     }
 }
 
@@ -205,6 +213,80 @@ impl Default for ClipboardConfig {
         Self {
             bin: "wl-copy".to_string(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PasteConfig {
+    /// 复制成功后是否尝试自动粘贴。
+    pub enabled: bool,
+    /// 发送快捷键的 Wayland 虚拟键盘工具。
+    pub bin: String,
+    /// 默认粘贴快捷键。
+    pub shortcut: String,
+    /// 终端类程序使用的粘贴快捷键。
+    pub terminal_shortcut: String,
+    /// 使用 terminal_shortcut 的 app_id 列表。
+    pub terminal_apps: Vec<String>,
+    /// 按 app_id 覆盖快捷键。
+    pub apps: HashMap<String, String>,
+    /// 发送快捷键前的延迟，给剪贴板留一点时间。
+    pub delay_ms: u64,
+    /// 用于读取焦点窗口 app_id 的命令。
+    pub niri_bin: String,
+}
+
+impl Default for PasteConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            bin: "wtype".to_string(),
+            shortcut: "ctrl+v".to_string(),
+            terminal_shortcut: "ctrl+shift+v".to_string(),
+            terminal_apps: [
+                "Alacritty",
+                "kitty",
+                "foot",
+                "org.wezfurlong.wezterm",
+                "WezTerm",
+                "com.mitchellh.ghostty",
+                "xterm",
+                "URxvt",
+                "st",
+                "Konsole",
+                "gnome-terminal",
+                "org.gnome.Terminal",
+                "org.gnome.Console",
+                "kgx",
+                "Terminator",
+                "tilix",
+            ]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+            apps: HashMap::new(),
+            delay_ms: 30,
+            niri_bin: "niri".to_string(),
+        }
+    }
+}
+
+impl PasteConfig {
+    pub fn shortcut_for(&self, app_id: Option<&str>) -> &str {
+        if let Some(app_id) = app_id {
+            if let Some(shortcut) = self.apps.get(app_id) {
+                return shortcut;
+            }
+            if self
+                .terminal_apps
+                .iter()
+                .any(|terminal| terminal.eq_ignore_ascii_case(app_id))
+            {
+                return &self.terminal_shortcut;
+            }
+        }
+        &self.shortcut
     }
 }
 
@@ -281,6 +363,7 @@ pub struct Config {
     pub ui: UiConfig,
     pub ipc: IpcConfig,
     pub clipboard: ClipboardConfig,
+    pub paste: PasteConfig,
 
     #[serde(skip)]
     pub paths: Paths,
@@ -353,8 +436,26 @@ impl Config {
         if let Some(v) = env_string("PHOENIX_STT_CLIPBOARD_BIN") {
             self.clipboard.bin = v;
         }
+        if let Some(v) = env_string("PHOENIX_STT_PASTE") {
+            self.paste.enabled = !matches!(v.as_str(), "0" | "false" | "no" | "off");
+        }
+        if let Some(v) = env_string("PHOENIX_STT_PASTE_BIN") {
+            self.paste.bin = v;
+        }
+        if let Some(v) = env_string("PHOENIX_STT_PASTE_SHORTCUT") {
+            self.paste.shortcut = v;
+        }
+        if let Some(v) = env_string("PHOENIX_STT_PASTE_TERMINAL_SHORTCUT") {
+            self.paste.terminal_shortcut = v;
+        }
+        if let Some(v) = env_string("PHOENIX_STT_PASTE_DELAY_MS").and_then(|s| s.parse().ok()) {
+            self.paste.delay_ms = v;
+        }
         if let Some(v) = env_string("PHOENIX_STT_UI") {
             self.ui.enabled = !matches!(v.as_str(), "0" | "false" | "no" | "off");
+        }
+        if let Some(v) = env_string("PHOENIX_STT_UI_SCALE").and_then(|s| s.parse().ok()) {
+            self.ui.scale = v;
         }
         self.whisper.model = expand_tilde(&self.whisper.model);
     }
@@ -376,6 +477,20 @@ impl Config {
             if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
                 bail!("[llm].endpoint 必须以 http:// 或 https:// 开头");
             }
+        }
+        if self.paste.enabled {
+            if self.paste.bin.trim().is_empty() {
+                bail!("[paste].bin 不能为空");
+            }
+            if self.paste.shortcut.trim().is_empty() {
+                bail!("[paste].shortcut 不能为空");
+            }
+            if self.paste.terminal_shortcut.trim().is_empty() {
+                bail!("[paste].terminal_shortcut 不能为空");
+            }
+        }
+        if !(self.ui.scale.is_finite() && self.ui.scale > 0.0) {
+            bail!("[ui].scale 必须是大于 0 的数字");
         }
         Ok(())
     }
@@ -501,6 +616,20 @@ impl Config {
             bail!(
                 "找不到剪贴板命令 `{}`。\n建议：安装 wl-clipboard（提供 wl-copy），或在 {} 中设置 [clipboard].bin。",
                 self.clipboard.bin,
+                self.paths.config.display()
+            );
+        }
+        Ok(())
+    }
+
+    pub fn check_paste(&self) -> Result<()> {
+        if !self.paste.enabled {
+            return Ok(());
+        }
+        if tools::find_in_path(&self.paste.bin).is_none() {
+            bail!(
+                "找不到自动粘贴命令 `{}`。\n建议：安装 wtype（Wayland 虚拟键盘工具），或在 {} 中设置 [paste].bin；也可以设置 [paste].enabled = false 只复制不粘贴。",
+                self.paste.bin,
                 self.paths.config.display()
             );
         }

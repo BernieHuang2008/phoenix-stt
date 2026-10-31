@@ -46,6 +46,14 @@ pub fn worker(cfg: Config, chunks: Receiver<Chunk>, events: Sender<AppEvent>) {
         return;
     }
 
+    if let Err(error) = clipboard::paste(&cfg) {
+        eprintln!("phoenix-stt: 自动粘贴失败: {error:#}");
+        notice = Some(match notice {
+            Some(notice) => format!("{notice}；已复制，自动粘贴失败"),
+            None => "已复制，自动粘贴失败".to_string(),
+        });
+    }
+
     let _ = events.send(AppEvent::Done);
     if let Some(notice) = notice {
         let _ = events.send(AppEvent::Notice(notice));

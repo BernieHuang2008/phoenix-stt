@@ -1,6 +1,6 @@
 # Phoenix STT
 
-Phoenix STT 是 phoenix 的语音输入法：按一次快捷键开始录音，再按一次停止。录音按 10 秒切块送 whisper，转写结果拼接后交给本地或外部 OpenAI 兼容 LLM 润色，最后写入剪贴板。
+Phoenix STT 是 phoenix 的语音输入法：按一次快捷键开始录音，再按一次停止。录音按 10 秒切块送 whisper，转写结果拼接后交给本地或外部 OpenAI 兼容 LLM 润色，最后写入剪贴板，并尝试在当前光标处自动粘贴。
 
 ## 功能
 
@@ -9,6 +9,8 @@ Phoenix STT 是 phoenix 的语音输入法：按一次快捷键开始录音，�
 - 每块立即送 `whisper-cli` 识别，不阻塞录音。
 - 支持本地 npu-llm，也支持任何 OpenAI 兼容 `chat/completions` endpoint（OpenAI、DeepSeek、OpenRouter 等）。
 - API key 只保存在 `~/.config/phoenix-ai/secrets/models.json`，不会出现在 `stt.toml` 或 `phoenix-stt config` 输出中。
+- 自动粘贴通过 Wayland 虚拟键盘（`wtype`）发送快捷键，不依赖 X11，也不会使用 Return 逐字输入；换行由粘贴原样保留。
+- 默认使用 `Ctrl+V`；终端类窗口自动使用 `Ctrl+Shift+V`，也可以按 `app_id` 覆盖。
 - `phoenix-stt doctor` 自动检查模型、依赖、密钥权限和 endpoint 可达性，并给出修复建议。
 - LLM 不可用时仍然复制原始 whisper 转写，并用胶囊提示。
 
@@ -36,7 +38,7 @@ cargo clippy
 # 生成默认配置和密钥模板（不会覆盖已有文件）
 phoenix-stt init
 
-# 检查模型、whisper、PipeWire、剪贴板和 LLM endpoint
+# 检查模型、whisper、PipeWire、剪贴板、自动粘贴和 LLM endpoint
 phoenix-stt doctor
 
 # 启动常驻进程
@@ -94,12 +96,30 @@ curl_bin = "curl"
 
 [ui]
 enabled = true
+# 胶囊整体缩放，高分屏可以设成 1.5 或 2.0
+scale = 1.0
+margin_bottom = 64
 
 [ipc]
 # socket = "/run/user/1000/phoenix-stt.sock"
 
 [clipboard]
 bin = "wl-copy"
+
+[paste]
+# 复制成功后，用 Wayland 虚拟键盘发送粘贴快捷键
+enabled = true
+bin = "wtype"
+shortcut = "ctrl+v"
+terminal_shortcut = "ctrl+shift+v"
+# 发送快捷键前的延迟
+delay_ms = 30
+# 用于获取当前焦点窗口的 app_id
+niri_bin = "niri"
+
+# 按 app_id 覆盖快捷键，例如：
+# [paste.apps]
+# "SomeApp" = "ctrl+shift+v"
 ```
 
 ## 模型与 API key
@@ -218,6 +238,19 @@ services.pipewire.enable = true;
 
 安装 `wl-clipboard`，确认 `wl-copy` 在 PATH 中，或在 `stt.toml` 设置 `[clipboard].bin`。
 
+### 没有自动粘贴
+
+- 安装 `wtype`，确认它在 PATH 中，或在 `stt.toml` 设置 `[paste].bin`。
+- 某些程序使用不同的粘贴快捷键。用 `niri msg --json focused-window` 查看它的 `app_id`，然后在 `[paste.apps]` 里覆盖，例如：
+
+  ```toml
+  [paste.apps]
+  "SomeApp" = "ctrl+shift+v"
+  ```
+
+- 终端默认使用 `ctrl+shift+v`；如果你的终端不在默认列表里，把它加到 `[paste].terminal_apps`。
+- 只想复制、不自动粘贴时设置 `[paste].enabled = false`。
+
 ## 环境变量
 
 `PHOENIX_STT_CONFIG`、`PHOENIX_STT_SECRETS`、`PHOENIX_AI_SECRETS`、
@@ -225,7 +258,9 @@ services.pipewire.enable = true;
 `PHOENIX_STT_AUDIO_CMD`、`PHOENIX_STT_SAMPLE_RATE`、`PHOENIX_STT_CHUNK_SECS`、
 `PHOENIX_STT_OVERLAP_SECS`、`PHOENIX_STT_LLM_MODEL`、`PHOENIX_STT_LLM_MODEL_NAME`、
 `PHOENIX_STT_LLM_ENDPOINT`、`PHOENIX_STT_LLM_URL`、`PHOENIX_STT_PROMPT`、
-`PHOENIX_STT_CURL_BIN`、`PHOENIX_STT_SOCKET`、`PHOENIX_STT_CLIPBOARD_BIN`、`PHOENIX_STT_UI`。
+`PHOENIX_STT_CURL_BIN`、`PHOENIX_STT_SOCKET`、`PHOENIX_STT_CLIPBOARD_BIN`、`PHOENIX_STT_UI`、
+`PHOENIX_STT_UI_SCALE`、`PHOENIX_STT_PASTE`、`PHOENIX_STT_PASTE_BIN`、
+`PHOENIX_STT_PASTE_SHORTCUT`、`PHOENIX_STT_PASTE_TERMINAL_SHORTCUT`、`PHOENIX_STT_PASTE_DELAY_MS`。
 
 注意：`PHOENIX_STT_LLM_MODEL` 现在表示 `models.json` 中的条目名；要改发送给 API 的 model 字段，请用 `PHOENIX_STT_LLM_MODEL_NAME`。
 
@@ -233,5 +268,6 @@ services.pipewire.enable = true;
 
 - whisper 分块有 1 秒重叠，边界处可能出现重复文字，交给 LLM 润色时一般会去掉。
 - npu-llm 一次只处理一个请求，处理期间再按快捷键会被忽略。
-- 目前只实现了 Wayland / `wl-copy`；X11 需要替换剪贴板命令。
+- 目前只实现了 Wayland；剪贴板用 `wl-copy`，自动粘贴用 `wtype` 发送快捷键。X11 需要替换这两个命令。
+- 自动粘贴不是 Wayland 输入法 `commit_string`：fcitx5 已占用输入法通道，所以这里通过虚拟键盘发送程序自己的粘贴快捷键。遇到快捷键不同的程序请在 `[paste.apps]` 覆盖。
 - `[audio].command` 按空格切分，参数里不要带空格。
