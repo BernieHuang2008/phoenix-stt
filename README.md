@@ -17,12 +17,12 @@ Phoenix STT 是 phoenix 的语音输入法：按一次快捷键开始录音，�
 ## 构建
 
 ```bash
-cd stt
-nix build --offline
+nix build
 ./result/bin/phoenix-stt --help
 ```
 
-仓库内带了 `vendor/`（`cargo vendor` 生成），所以构建不依赖 crates.io。删除 `vendor/` 后 flake 会自动改用 `Cargo.lock` 模式。
+本地如果有 `vendor/`（`cargo vendor` 生成），flake 会用 `cargoVendorDir` 离线构建；
+GitHub 仓库不包含 `vendor/`，新克隆会按 `Cargo.lock` 拉取 crates.io 依赖。
 
 开发：
 
