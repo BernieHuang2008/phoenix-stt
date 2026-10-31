@@ -1,0 +1,20 @@
+[package]
+name = "phoenix-stt"
+version = "0.1.0"
+edition = "2021"
+description = "Phoenix voice input method for NixOS + niri"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+dirs = "6.0"
+glib = "0.21"
+gtk = { version = "0.10", package = "gtk4" }
+gtk4-layer-shell = { version = "0.7", features = ["v1_3"] }
+hound = "3.5"
+libc = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3.10"
+toml = "0.8"
